@@ -2,7 +2,6 @@ package pro.sky.telegramBot.listener;
 
 import com.pengrad.telegrambot.TelegramBot;
 import com.pengrad.telegrambot.UpdatesListener;
-import com.pengrad.telegrambot.model.Message;
 import com.pengrad.telegrambot.model.Update;
 import com.pengrad.telegrambot.model.request.ParseMode;
 import org.slf4j.Logger;
@@ -17,6 +16,7 @@ import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.util.List;
+import java.util.Objects;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -29,9 +29,9 @@ public class TelegramBotUpdatesListener implements UpdatesListener {
             "(\\d{1,2}\\.\\d{1,2}\\.\\d{4} \\d{1,2}:\\d{2}) ([А-яA-z\\d,\\s.?!:]+)");
 
     private static final DateTimeFormatter DATE_TIME_FORMATTER = DateTimeFormatter.ofPattern(
-            "d.M.yyyy HH:mm");
+            "dd.MM.yyyy HH:mm");
 
-    private static final String TEXT_MESSAGE = "Для планирования уведомлений пришлите сообщение в следующем формате: \\n*01.01.2022 20:00 Текст уведомления*";
+    private static final String TEXT_MESSAGE = "Для планирования уведомлений пришлите сообщение в следующем формате: \n*01.01.2022 20:00 Текст уведомления*";
 
     private final TelegramBot telegramBot;
 
@@ -52,28 +52,36 @@ public class TelegramBotUpdatesListener implements UpdatesListener {
 
     @Override
     public int process(List<Update> updates) {
-        updates.forEach(update -> {
-            logger.info("Processing update: {}", update);
-            LocalDateTime dateTime;
-            Long id = update.message().chat().id();
-            if (update.message() != null){
-                Message message = update.message();
-                String text = message.text();
-                if ("/start".equals(text)){
-                    telegramBotService.sendMessage(id, TEXT_MESSAGE, ParseMode.Markdown);
-                }else if (text != null){
-                    Matcher matcher = PATTERN.matcher(text);
-                    dateTime = parse(matcher.group(1));
-                    if (matcher.matches() && dateTime != null){
-                        notificationTaskService.save(matcher.group(2), id, dateTime);
-                        telegramBotService.sendMessage(id,"Вы получите уведомление " + dateTime);
+        try {
+            updates.forEach(update -> {
+                logger.info("Processing update: {}", update);
+                LocalDateTime dateTime;
+                Long id = update.message().chat().id();
+                if (update.message() != null) {
+                    String text = update.message().text();
+                    if ("/start".equals(text)) {
+                        telegramBotService.sendMessage(id, TEXT_MESSAGE, ParseMode.Markdown);
+                    } else if (Objects.nonNull(text)) {
+                        Matcher matcher = PATTERN.matcher(text);
+                        if (matcher.find()) {
+                            dateTime = parse(matcher.group(1));
+                            if (Objects.nonNull(dateTime)) {
+                                notificationTaskService.save(matcher.group(2), id, dateTime);
+                                telegramBotService.sendMessage(id, "Вы получите уведомление " + dateTime);
+                            } else {
+                                telegramBotService.sendMessage(id, "Invalid date and time format.");
+                            }
+                        } else {
+                            telegramBotService.sendMessage(id, "I'm sorry I do not understand you.");
+                        }
                     }else {
                         telegramBotService.sendMessage(id, "I'm sorry I do not understand you.");
                     }
                 }
-                telegramBotService.sendMessage(id, TEXT_MESSAGE, ParseMode.Markdown);
-            }
-        });
+            });
+        }catch (Exception e){
+            logger.error(e.getMessage(), e);
+        }
         return UpdatesListener.CONFIRMED_UPDATES_ALL;
     }
 
