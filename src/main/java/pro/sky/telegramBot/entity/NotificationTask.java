@@ -16,6 +16,12 @@ public class NotificationTask {
     @Column(name = "chat_id")
     private long chatId;
 
+    public NotificationTask(String text, long chatId, LocalDateTime dateTime) {
+        this.text = text;
+        this.chatId = chatId;
+        this.dateTime = dateTime;
+    }
+
     @Column(name = "date_time")
     private LocalDateTime dateTime;
 

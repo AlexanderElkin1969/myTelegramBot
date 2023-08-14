@@ -5,12 +5,12 @@ import com.pengrad.telegrambot.UpdatesListener;
 import com.pengrad.telegrambot.model.Message;
 import com.pengrad.telegrambot.model.Update;
 import com.pengrad.telegrambot.model.request.ParseMode;
-import com.pengrad.telegrambot.request.SendMessage;
-import com.pengrad.telegrambot.response.SendResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Service;
+import pro.sky.telegramBot.service.NotificationTaskService;
+import pro.sky.telegramBot.service.TelegramBotService;
 
 import javax.annotation.PostConstruct;
 import java.time.LocalDateTime;
@@ -31,8 +31,19 @@ public class TelegramBotUpdatesListener implements UpdatesListener {
     private static final DateTimeFormatter DATE_TIME_FORMATTER = DateTimeFormatter.ofPattern(
             "d.M.yyyy HH:mm");
 
-    @Autowired
-    private TelegramBot telegramBot;
+    private static final String TEXT_MESSAGE = "Для планирования уведомлений пришлите сообщение в следующем формате: \\n*01.01.2022 20:00 Текст уведомления*";
+
+    private final TelegramBot telegramBot;
+
+    private final NotificationTaskService notificationTaskService;
+
+    private final TelegramBotService telegramBotService;
+
+    public TelegramBotUpdatesListener(TelegramBot telegramBot, NotificationTaskService notificationTaskService, TelegramBotService telegramBotService) {
+        this.telegramBot = telegramBot;
+        this.notificationTaskService = notificationTaskService;
+        this.telegramBotService = telegramBotService;
+    }
 
     @PostConstruct
     public void init() {
@@ -43,29 +54,30 @@ public class TelegramBotUpdatesListener implements UpdatesListener {
     public int process(List<Update> updates) {
         updates.forEach(update -> {
             logger.info("Processing update: {}", update);
+            LocalDateTime dateTime;
             Long id = update.message().chat().id();
             if (update.message() != null){
                 Message message = update.message();
                 String text = message.text();
                 if ("/start".equals(text)){
-                    SendMessage sendMessage = new SendMessage(
-                            id,
-                            "Для планирования уведомлений пришлите сообщение в следующем формате: \\n*01.01.2022 20:00 Текст уведомления*"
-                    );
-                    sendMessage.parseMode(ParseMode.Markdown);
-                    SendResponse sendResponse = telegramBot.execute(sendMessage);
-                    if (!sendResponse.isOk()){
-                        logger.error("Ошибка отправки сообщения: " + sendResponse.description());
+                    telegramBotService.sendMessage(id, TEXT_MESSAGE, ParseMode.Markdown);
+                }else if (text != null){
+                    Matcher matcher = PATTERN.matcher(text);
+                    dateTime = parse(matcher.group(1));
+                    if (matcher.matches() && dateTime != null){
+                        notificationTaskService.save(matcher.group(2), id, dateTime);
+                        telegramBotService.sendMessage(id,"Вы получите уведомление " + dateTime);
+                    }else {
+                        telegramBotService.sendMessage(id, "I'm sorry I do not understand you.");
                     }
                 }
-                if (text != null){
-                    Matcher matcher = PATTERN.matcher(text);
-                }
+                telegramBotService.sendMessage(id, TEXT_MESSAGE, ParseMode.Markdown);
             }
         });
         return UpdatesListener.CONFIRMED_UPDATES_ALL;
     }
 
+    @Nullable
     private LocalDateTime parse(String dateTime){
         try{
             return LocalDateTime.parse(dateTime, DATE_TIME_FORMATTER);
